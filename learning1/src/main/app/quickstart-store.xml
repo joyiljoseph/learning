@@ -31,7 +31,7 @@ INNER JOIN variant ON product.uuid = variant.productUUID
 WHERE product.uuid = #[flowVars.id]]]></db:parameterized-query>
         </db:select>
         <json:object-to-json-transformer doc:name="Object to JSON"/>
-        <logger message="JSON Object --&gt; #[payload]" level="INFO" doc:name="Logger"/>
+        <logger message="JSON Object payload --&gt; #[payload]" level="INFO" doc:name="Logger"/>
         <dw:transform-message doc:name="Transform Message" metadata:id="f5c5a78b-09f5-4b6b-852e-8a96d5e513ab">
             <dw:input-payload mimeType="application/json"/>
             <dw:set-payload><![CDATA[%dw 1.0
