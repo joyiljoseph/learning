@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:apikit="http://www.mulesoft.org/schema/mule/apikit" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/apikit http://www.mulesoft.org/schema/mule/apikit/current/mule-apikit.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.1.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd">
+    <http:listener-config name="quickstart-store-httpListenerConfig" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
+    <apikit:config name="quickstart-store-config" raml="quickstart-store.raml" consoleEnabled="false" doc:name="Router"/>
+    <db:mysql-config name="Products_Config" host="congo.devrel.mulesoft.com" port="3306" user="mulesoft" password="mulesoft" database="products" doc:name="MySQL Configuration"/>
+    <flow name="quickstart-store-main">
+        <http:listener config-ref="quickstart-store-httpListenerConfig" path="/api/*" doc:name="HTTP"/>
+        <apikit:router config-ref="quickstart-store-config" doc:name="APIkit Router"/>
+        <exception-strategy ref="quickstart-store-apiKitGlobalExceptionMapping" doc:name="Reference Exception Strategy"/>
+    </flow>
+    <flow name="quickstart-store-console">
+        <http:listener config-ref="quickstart-store-httpListenerConfig" path="/console/*" doc:name="HTTP"/>
+        <apikit:console config-ref="quickstart-store-config" doc:name="APIkit Console"/>
+    </flow>
+    <flow name="get:/products/{productId}:quickstart-store-config">
+        <set-variable variableName="id" value="#[flowVars.productId]" doc:name="Variable"/>
+        <logger message="#[flowVars.id]" level="INFO" doc:name="Logger"/>
+        <db:select config-ref="Products_Config" doc:name="Database">
+            <db:parameterized-query><![CDATA[SELECT 
+product.*,
+CONCAT('["', (GROUP_CONCAT(variant.picture SEPARATOR '", "')),'"]') AS pictures,
+CONCAT('[', GROUP_CONCAT('{"',variant.identifierType, '":"', variant.identifier, '"}'),']') AS identifiers
+FROM product
+INNER JOIN variant ON product.uuid = variant.productUUID
+WHERE product.uuid = #[flowVars.id]]]></db:parameterized-query>
+        </db:select>
+        <json:object-to-json-transformer doc:name="Object to JSON"/>
+        <logger message="JSON Object --&gt; #[payload]" level="INFO" doc:name="Logger"/>
+        <dw:transform-message doc:name="Transform Message" metadata:id="f5c5a78b-09f5-4b6b-852e-8a96d5e513ab">
+            <dw:input-payload mimeType="application/json"/>
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+{
+	brand: payload.brand,
+	identifier: payload.uuid,
+	identifiers: payload.identifiers map ((identifier , indexOfIdentifier) -> {
+		SKU: identifier.SKU
+	}),
+	model: payload.model,
+	rating: payload.rating,
+	description: payload.description,
+	pictures: payload.pictures map ((picture , indexOfPicture) -> picture),
+	price: {
+		amount: {
+			currency: payload.currency,
+			currencyValue: payload.currencyValue
+		},
+		salesUnit: {
+			code: payload.salesUnitCode,
+			name: payload.salesUnitName
+		}
+	}
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <set-payload value="#[payload]" doc:name="Set Payload"/>
+    </flow>
+    <apikit:mapping-exception-strategy name="quickstart-store-apiKitGlobalExceptionMapping">
+        <apikit:mapping statusCode="404">
+            <apikit:exception value="org.mule.module.apikit.exception.NotFoundException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property"/>
+            <set-payload value="{ &quot;message&quot;: &quot;Resource not found&quot; }" doc:name="Set Payload"/>
+        </apikit:mapping>
+        <apikit:mapping statusCode="405">
+            <apikit:exception value="org.mule.module.apikit.exception.MethodNotAllowedException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property"/>
+            <set-payload value="{ &quot;message&quot;: &quot;Method not allowed&quot; }" doc:name="Set Payload"/>
+        </apikit:mapping>
+        <apikit:mapping statusCode="415">
+            <apikit:exception value="org.mule.module.apikit.exception.UnsupportedMediaTypeException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property"/>
+            <set-payload value="{ &quot;message&quot;: &quot;Unsupported media type&quot; }" doc:name="Set Payload"/>
+        </apikit:mapping>
+        <apikit:mapping statusCode="406">
+            <apikit:exception value="org.mule.module.apikit.exception.NotAcceptableException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property"/>
+            <set-payload value="{ &quot;message&quot;: &quot;Not acceptable&quot; }" doc:name="Set Payload"/>
+        </apikit:mapping>
+        <apikit:mapping statusCode="400">
+            <apikit:exception value="org.mule.module.apikit.exception.BadRequestException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property"/>
+            <set-payload value="{ &quot;message&quot;: &quot;Bad request&quot; }" doc:name="Set Payload"/>
+        </apikit:mapping>
+    </apikit:mapping-exception-strategy>
+</mule>
